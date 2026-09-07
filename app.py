@@ -330,8 +330,8 @@ fig.add_trace(go.Scatter(
     line=dict(width=0.8, color='rgba(59, 130, 246, 0.5)'),
     fill='tonexty',
     fillcolor='rgba(59, 130, 246, 0.25)',
-    name='🔵 便宜區 (-2.0σ ~ -1.0σ)',
-    hovertemplate="日期: %{x|%Y/%m/%d}<br>便宜下界(-1.0σ): $%{y:.2f}"
+    name='🔵 便宜區',
+    hovertemplate="$%{y:.2f}<extra></extra>"
 ))
 
 # 3. Low Zone (Lower 1 to Center MA) - Green Fill
@@ -343,7 +343,7 @@ fig.add_trace(go.Scatter(
     fill='tonexty',
     fillcolor='rgba(34, 197, 94, 0.20)',
     name=f'⚪ 中線 (MA {selected_ma_period}日)',
-    hovertemplate="日期: %{x|%Y/%m/%d}<br>中線MA: $%{y:.2f}"
+    hovertemplate="$%{y:.2f}<extra></extra>"
 ))
 
 # 4. High Zone (Center MA to Upper 1) - Orange Fill
@@ -354,8 +354,8 @@ fig.add_trace(go.Scatter(
     line=dict(width=0.8, color='rgba(245, 158, 11, 0.5)'),
     fill='tonexty',
     fillcolor='rgba(245, 158, 11, 0.20)',
-    name='🟠 偏高區 (MA ~ +1.0σ)',
-    hovertemplate="日期: %{x|%Y/%m/%d}<br>偏高上界(+1.0σ): $%{y:.2f}"
+    name='🟠 偏高區',
+    hovertemplate="$%{y:.2f}<extra></extra>"
 ))
 
 # 5. Expensive Zone (Upper 1 to Upper 2) - Red Fill
@@ -366,8 +366,8 @@ fig.add_trace(go.Scatter(
     line=dict(width=0.8, color='rgba(239, 68, 68, 0.5)'),
     fill='tonexty',
     fillcolor='rgba(239, 68, 68, 0.25)',
-    name='🔴 昂貴區 (+1.0σ ~ +2.0σ)',
-    hovertemplate="日期: %{x|%Y/%m/%d}<br>昂貴上界(+2.0σ): $%{y:.2f}"
+    name='🔴 昂貴區',
+    hovertemplate="$%{y:.2f}<extra></extra>"
 ))
 
 # 6. Actual Fund NAV Line
@@ -376,8 +376,8 @@ fig.add_trace(go.Scatter(
     y=df_sub['NAV'],
     mode='lines',
     line=dict(color='#38bdf8', width=2.8),
-    name='安聯台灣科技基金淨值 (NAV)',
-    hovertemplate="日期: %{x|%Y/%m/%d}<br>真實淨值: $%{y:.2f}"
+    name='基金真實淨值',
+    hovertemplate="$%{y:.2f}<extra></extra>"
 ))
 
 # 7. Latest Price Marker
@@ -399,7 +399,8 @@ fig.update_layout(
     title=None, # 不在圖表畫布內置標題，徹底杜絕與右上角放大縮小按鈕重疊衝突！
     xaxis=dict(
         title=None,
-        tickformat="%m/%d", # 顯示 08/23, 08/30，精簡整齊水平排列
+        tickformat="%m/%d", # 橫軸座標標籤：精簡月/日
+        hoverformat="%Y/%m/%d", # 懸浮視窗頂部統一顯示完整年月日，下方不再重複
         showgrid=True,
         gridcolor="#1e293b",
         tickangle=0
@@ -429,7 +430,7 @@ chart_config = {
     'displayModeBar': True,
     'displaylogo': False,
     'modeBarButtonsToAdd': ['zoomIn2d', 'zoomOut2d', 'resetScale2d', 'pan2d', 'zoom2d'],
-    'modeBarButtonsToRemove': ['select2d', 'lasso2d', 'autoScale2d'],
+    'modeBarButtonsToRemove': ['toImage', 'select2d', 'lasso2d', 'autoScale2d'],  # 徹底移除拍照(toImage)功能
     'doubleClick': 'reset+autosize',
     'responsive': True
 }

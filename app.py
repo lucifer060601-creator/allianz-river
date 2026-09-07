@@ -297,15 +297,19 @@ with col5:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
-# Plotly Interactive River Chart
-st.markdown(f"### 📈 淨值估值河流圖分析 ({selected_ma_label} / {selected_h_label})")
+col_title, col_reset = st.columns([3, 1])
+with col_title:
+    st.markdown(f"### 📈 淨值估值河流圖分析 ({selected_ma_label} / {selected_h_label})")
+with col_reset:
+    if st.button("🔄 一鍵還原原圖", use_container_width=True, help="點擊立刻恢復至最初河流圖視野"):
+        st.rerun()
 
 st.markdown("""
 <div class="chart-tips">
     <span class="tip-tag">📱 手機手勢</span>
-    <span>👉 <b>單指滑動</b>：平移時間軸</span>
-    <span>✌️ <b>雙指捏合</b>：縮放</span>
-    <span>👆 <b>連點兩下</b>：重設原狀</span>
+    <span>👉 <b>單指滑動</b>：左右平移時間軸</span>
+    <span>✌️ <b>雙指捏合</b>：縮放時間範圍</span>
+    <span>👆 <b>連點兩下</b>：瞬間還原全景</span>
     <span>右上角有 <b>[+] [-] [🏠]</b> 快速縮放鈕</span>
 </div>
 """, unsafe_allow_html=True)
@@ -395,6 +399,17 @@ fig.add_trace(go.Scatter(
     hoverinfo='skip'
 ))
 
+min_x = df_sub['Date'].min()
+max_x = df_sub['Date'].max()
+day_span = (max_x - min_x).days
+padding_days = max(1, int(day_span * 0.03))
+pad_delta = pd.Timedelta(days=padding_days)
+bound_delta = pd.Timedelta(days=max(3, int(day_span * 0.20)))
+
+min_y = float(df_sub['Lower_2'].min())
+max_y = float(max(df_sub['Upper_2'].max(), df_sub['NAV'].max()))
+y_pad = (max_y - min_y) * 0.06
+
 fig.update_layout(
     title=None, # 不在圖表畫布內置標題，徹底杜絕與右上角放大縮小按鈕重疊衝突！
     xaxis=dict(
@@ -403,16 +418,22 @@ fig.update_layout(
         hoverformat="%Y/%m/%d", # 懸浮視窗頂部統一顯示完整年月日，下方不再重複
         showgrid=True,
         gridcolor="#1e293b",
-        tickangle=0
+        tickangle=0,
+        range=[min_x - pad_delta, max_x + pad_delta],
+        minallowed=min_x - bound_delta,
+        maxallowed=max_x + bound_delta,
+        fixedrange=False
     ),
     yaxis=dict(
         title="淨值 (NTD)",
         showgrid=True,
-        gridcolor="#1e293b"
+        gridcolor="#1e293b",
+        range=[min_y - y_pad, max_y + y_pad],
+        fixedrange=True # 關鍵核心：鎖定 Y 軸高度！禁止雙指縮放或滑動時將價格移出畫面，只縮放水平時間軸！
     ),
     template="plotly_dark",
     height=450,
-    dragmode="pan",  # 手機觸控核心：預設為平移，避免手指滑動時誤觸方框縮放！
+    dragmode="pan",  # 手機觸控核心：預設為平移
     hovermode="x unified",
     margin=dict(l=10, r=10, t=15, b=85),
     legend=dict(
@@ -430,8 +451,8 @@ chart_config = {
     'displayModeBar': True,
     'displaylogo': False,
     'modeBarButtonsToAdd': ['zoomIn2d', 'zoomOut2d', 'resetScale2d', 'pan2d', 'zoom2d'],
-    'modeBarButtonsToRemove': ['toImage', 'select2d', 'lasso2d', 'autoScale2d'],  # 徹底移除拍照(toImage)功能
-    'doubleClick': 'reset+autosize',
+    'modeBarButtonsToRemove': ['toImage', 'select2d', 'lasso2d', 'autoScale2d'],  # 徹底移除拍照功能
+    'doubleClick': 'reset', # 點兩下精準還原為初始設定範圍
     'responsive': True
 }
 

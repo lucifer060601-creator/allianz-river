@@ -105,6 +105,43 @@ st.markdown("""
             margin-bottom: 4px !important;
         }
     }
+
+    /* Plotly Modebar & Mobile Touch Optimization */
+    .modebar-container {
+        opacity: 0.95 !important;
+        background: rgba(15, 23, 42, 0.75) !important;
+        border-radius: 8px !important;
+        padding: 4px !important;
+    }
+    .modebar-btn {
+        padding: 4px 6px !important;
+    }
+    .modebar-btn svg {
+        width: 18px !important;
+        height: 18px !important;
+    }
+
+    .chart-tips {
+        background: rgba(30, 41, 59, 0.7);
+        border: 1px dashed #334155;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 0.82rem;
+        color: #94a3b8;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+    .tip-tag {
+        background: #0284c7;
+        color: white;
+        padding: 2px 7px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -350,26 +387,57 @@ fig.add_trace(go.Scatter(
 ))
 
 fig.update_layout(
-    title=f"安聯台灣科技基金 淨值估值河流圖 ({selected_ma_label} / {selected_h_label})",
-    xaxis=dict(
-        title="日期",
-        tickformat="%Y/%m/%d"
+    title=dict(
+        text=f"安聯台灣科技基金 淨值估值河流圖 ({selected_ma_label} / {selected_h_label})",
+        font=dict(size=15, color="#e2e8f0")
     ),
-    yaxis_title="基金淨值 (NTD)",
+    xaxis=dict(
+        title=None,
+        tickformat="%Y/%m/%d",
+        showgrid=True,
+        gridcolor="#1e293b"
+    ),
+    yaxis=dict(
+        title="淨值 (NTD)",
+        showgrid=True,
+        gridcolor="#1e293b"
+    ),
     template="plotly_dark",
-    height=540,
+    height=460,
+    dragmode="pan",  # 手機觸控核心：預設為平移，避免手指滑動時誤觸方框縮放！
     hovermode="x unified",
-    margin=dict(l=40, r=40, t=60, b=40),
+    margin=dict(l=10, r=10, t=35, b=60),
     legend=dict(
         orientation="h",
-        yanchor="bottom",
-        y=1.02,
-        xanchor="right",
-        x=1
+        yanchor="top",
+        y=-0.18,
+        xanchor="center",
+        x=0.5,
+        font=dict(size=10)
     )
 )
 
-st.plotly_chart(fig, use_container_width=True)
+st.markdown("""
+<div class="chart-tips">
+    <span class="tip-tag">📱 手機觸控手勢</span>
+    <span>👉 <b>單指滑動</b>：左右平移時間軸</span>
+    <span>✌️ <b>雙指捏合</b>：縮放大小</span>
+    <span>👆 <b>連點兩下</b>：重設原狀</span>
+    <span>右上角有 <b>[+] [-] [🏠]</b> 快速縮放鈕</span>
+</div>
+""", unsafe_allow_html=True)
+
+chart_config = {
+    'scrollZoom': True,
+    'displayModeBar': True,
+    'displaylogo': False,
+    'modeBarButtonsToAdd': ['zoomIn2d', 'zoomOut2d', 'resetScale2d', 'pan2d', 'zoom2d'],
+    'modeBarButtonsToRemove': ['select2d', 'lasso2d', 'autoScale2d'],
+    'doubleClick': 'reset+autosize',
+    'responsive': True
+}
+
+st.plotly_chart(fig, use_container_width=True, config=chart_config)
 
 # Data Table & CSV Export Section
 st.markdown("### 📋 歷史淨值與估值明細數據")

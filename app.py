@@ -312,17 +312,17 @@ st.markdown("""
 
 fig = go.Figure()
 
-# 1. Lower 2 Line (Baseline for fill)
+# 1. Lower 2 Line (Baseline for cheap zone)
 fig.add_trace(go.Scatter(
     x=df_sub['Date'],
     y=df_sub['Lower_2'],
     mode='lines',
-    line=dict(width=0.8, color='rgba(59, 130, 246, 0.5)'),
-    showlegend=False,
-    hoverinfo='skip'
+    line=dict(width=0.8, color='rgba(59, 130, 246, 0.7)'),
+    name='🔵 便宜區',
+    hovertemplate="便宜區: $%{y:.2f}<extra></extra>"
 ))
 
-# 2. Cheap Zone (Lower 2 to Lower 1) - Blue Fill
+# 2. Cheap Zone Fill to Lower 1 (Low zone boundary)
 fig.add_trace(go.Scatter(
     x=df_sub['Date'],
     y=df_sub['Lower_1'],
@@ -330,11 +330,11 @@ fig.add_trace(go.Scatter(
     line=dict(width=0.8, color='rgba(59, 130, 246, 0.5)'),
     fill='tonexty',
     fillcolor='rgba(59, 130, 246, 0.25)',
-    name='🔵 便宜區',
-    hovertemplate="$%{y:.2f}<extra></extra>"
+    name='🟢 偏低區',
+    hovertemplate="偏低區: $%{y:.2f}<extra></extra>"
 ))
 
-# 3. Low Zone (Lower 1 to Center MA) - Green Fill
+# 3. Low Zone to Center MA (Green Fill)
 fig.add_trace(go.Scatter(
     x=df_sub['Date'],
     y=df_sub['Center'],
@@ -342,8 +342,8 @@ fig.add_trace(go.Scatter(
     line=dict(width=1.5, color='#ffffff', dash='dash'),
     fill='tonexty',
     fillcolor='rgba(34, 197, 94, 0.20)',
-    name=f'⚪ 中線 (MA {selected_ma_period}日)',
-    hovertemplate="$%{y:.2f}<extra></extra>"
+    name=f'⚪ 均線 (MA {selected_ma_period}日)',
+    hovertemplate="均線: $%{y:.2f}<extra></extra>"
 ))
 
 # 4. High Zone (Center MA to Upper 1) - Orange Fill
@@ -355,7 +355,7 @@ fig.add_trace(go.Scatter(
     fill='tonexty',
     fillcolor='rgba(245, 158, 11, 0.20)',
     name='🟠 偏高區',
-    hovertemplate="$%{y:.2f}<extra></extra>"
+    hovertemplate="偏高區: $%{y:.2f}<extra></extra>"
 ))
 
 # 5. Expensive Zone (Upper 1 to Upper 2) - Red Fill
@@ -367,7 +367,7 @@ fig.add_trace(go.Scatter(
     fill='tonexty',
     fillcolor='rgba(239, 68, 68, 0.25)',
     name='🔴 昂貴區',
-    hovertemplate="$%{y:.2f}<extra></extra>"
+    hovertemplate="昂貴區: $%{y:.2f}<extra></extra>"
 ))
 
 # 6. Actual Fund NAV Line
@@ -376,8 +376,8 @@ fig.add_trace(go.Scatter(
     y=df_sub['NAV'],
     mode='lines',
     line=dict(color='#38bdf8', width=2.8),
-    name='基金真實淨值',
-    hovertemplate="$%{y:.2f}<extra></extra>"
+    name='基金淨值',
+    hovertemplate="基金淨值: $%{y:.2f}<extra></extra>"
 ))
 
 # 7. Latest Price Marker

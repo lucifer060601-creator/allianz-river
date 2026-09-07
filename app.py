@@ -108,17 +108,16 @@ st.markdown("""
 
     /* Plotly Modebar & Mobile Touch Optimization */
     .modebar-container {
-        opacity: 0.95 !important;
-        background: rgba(15, 23, 42, 0.75) !important;
-        border-radius: 8px !important;
-        padding: 4px !important;
+        opacity: 0.9 !important;
+        background: transparent !important;
+        padding: 2px !important;
     }
     .modebar-btn {
         padding: 4px 6px !important;
     }
     .modebar-btn svg {
-        width: 18px !important;
-        height: 18px !important;
+        width: 17px !important;
+        height: 17px !important;
     }
 
     .chart-tips {
@@ -128,7 +127,7 @@ st.markdown("""
         padding: 8px 12px;
         font-size: 0.82rem;
         color: #94a3b8;
-        margin-bottom: 12px;
+        margin-bottom: 8px;
         display: flex;
         align-items: center;
         gap: 8px;
@@ -301,6 +300,16 @@ st.markdown("<br>", unsafe_allow_html=True)
 # Plotly Interactive River Chart
 st.markdown(f"### 📈 淨值估值河流圖分析 ({selected_ma_label} / {selected_h_label})")
 
+st.markdown("""
+<div class="chart-tips">
+    <span class="tip-tag">📱 手機手勢</span>
+    <span>👉 <b>單指滑動</b>：平移時間軸</span>
+    <span>✌️ <b>雙指捏合</b>：縮放</span>
+    <span>👆 <b>連點兩下</b>：重設原狀</span>
+    <span>右上角有 <b>[+] [-] [🏠]</b> 快速縮放鈕</span>
+</div>
+""", unsafe_allow_html=True)
+
 fig = go.Figure()
 
 # 1. Lower 2 Line (Baseline for fill)
@@ -387,15 +396,13 @@ fig.add_trace(go.Scatter(
 ))
 
 fig.update_layout(
-    title=dict(
-        text=f"安聯台灣科技基金 淨值估值河流圖 ({selected_ma_label} / {selected_h_label})",
-        font=dict(size=15, color="#e2e8f0")
-    ),
+    title=None, # 不在圖表畫布內置標題，徹底杜絕與右上角放大縮小按鈕重疊衝突！
     xaxis=dict(
         title=None,
-        tickformat="%Y/%m/%d",
+        tickformat="%m/%d", # 顯示 08/23, 08/30，精簡整齊水平排列
         showgrid=True,
-        gridcolor="#1e293b"
+        gridcolor="#1e293b",
+        tickangle=0
     ),
     yaxis=dict(
         title="淨值 (NTD)",
@@ -403,29 +410,19 @@ fig.update_layout(
         gridcolor="#1e293b"
     ),
     template="plotly_dark",
-    height=460,
+    height=450,
     dragmode="pan",  # 手機觸控核心：預設為平移，避免手指滑動時誤觸方框縮放！
     hovermode="x unified",
-    margin=dict(l=10, r=10, t=35, b=60),
+    margin=dict(l=10, r=10, t=15, b=85),
     legend=dict(
         orientation="h",
         yanchor="top",
-        y=-0.18,
+        y=-0.22,
         xanchor="center",
         x=0.5,
         font=dict(size=10)
     )
 )
-
-st.markdown("""
-<div class="chart-tips">
-    <span class="tip-tag">📱 手機觸控手勢</span>
-    <span>👉 <b>單指滑動</b>：左右平移時間軸</span>
-    <span>✌️ <b>雙指捏合</b>：縮放大小</span>
-    <span>👆 <b>連點兩下</b>：重設原狀</span>
-    <span>右上角有 <b>[+] [-] [🏠]</b> 快速縮放鈕</span>
-</div>
-""", unsafe_allow_html=True)
 
 chart_config = {
     'scrollZoom': True,

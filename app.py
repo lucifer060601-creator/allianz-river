@@ -1,0 +1,414 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
+from datetime import datetime
+
+from fetch_data import fetch_allianz_nav_data
+from river_calculator import calculate_river_bands
+
+# Page Configuration
+st.set_page_config(
+    page_title="安聯台灣科技基金 淨值估值河流圖",
+    page_icon="📈",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# Custom CSS for Dark Aesthetics
+st.markdown("""
+<style>
+    .stApp {
+        background-color: #0e1117;
+        color: #e0e6ed;
+    }
+    
+    .hero-container {
+        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        border: 1px solid #334155;
+        border-radius: 12px;
+        padding: 24px;
+        margin-bottom: 24px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    }
+    .hero-title {
+        color: #38bdf8;
+        font-size: 2.2rem;
+        font-weight: 700;
+        margin-bottom: 8px;
+    }
+    .hero-subtitle {
+        color: #94a3b8;
+        font-size: 1.05rem;
+        line-height: 1.5;
+    }
+    .fund-badge {
+        display: inline-block;
+        background-color: #0369a1;
+        color: #ffffff;
+        font-size: 0.85rem;
+        font-weight: 600;
+        padding: 4px 10px;
+        border-radius: 6px;
+        margin-right: 8px;
+    }
+    
+    .metric-card {
+        background: #1e293b;
+        border: 1px solid #334155;
+        border-radius: 10px;
+        padding: 16px 20px;
+        text-align: center;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    .metric-label {
+        color: #94a3b8;
+        font-size: 0.9rem;
+        font-weight: 500;
+        margin-bottom: 6px;
+    }
+    .metric-value {
+        font-size: 1.6rem;
+        font-weight: 700;
+    }
+    .metric-neutral {
+        color: #38bdf8;
+    }
+
+    /* Mobile Responsive Optimizations */
+    @media (max-width: 768px) {
+        .hero-container {
+            padding: 16px !important;
+            margin-bottom: 16px !important;
+        }
+        .hero-title {
+            font-size: 1.4rem !important;
+            line-height: 1.3 !important;
+        }
+        .hero-subtitle {
+            font-size: 0.88rem !important;
+            line-height: 1.4 !important;
+        }
+        .metric-card {
+            padding: 10px 12px !important;
+            margin-bottom: 10px !important;
+        }
+        .metric-label {
+            font-size: 0.8rem !important;
+        }
+        .metric-value {
+            font-size: 1.25rem !important;
+        }
+        .fund-badge {
+            font-size: 0.75rem !important;
+            padding: 2px 6px !important;
+            margin-bottom: 4px !important;
+        }
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Load Raw NAV Data - Always fetch latest NAV live from API on initial startup
+if "df_raw" not in st.session_state:
+    with st.spinner("🔄 系統啟動中，正在即時連線抓取最新淨值..."):
+        try:
+            df_raw = fetch_allianz_nav_data(force_update=True)
+            st.session_state["df_raw"] = df_raw
+        except Exception as e:
+            st.error(f"載入基金數據失敗: {e}")
+            st.stop()
+else:
+    df_raw = st.session_state["df_raw"]
+
+try:
+    min_date = df_raw['Date'].min().date()
+    max_date = df_raw['Date'].max().date()
+except Exception as e:
+    st.error(f"解析基金日期失敗: {e}")
+    st.stop()
+
+# Header Banner
+st.markdown(f"""
+<div class="hero-container">
+    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;">
+        <div>
+            <span class="fund-badge">042004</span>
+            <span class="fund-badge">ACDD04</span>
+            <span class="fund-badge">台幣級別</span>
+            <span class="fund-badge" style="background-color: #16a34a;">雙擊「啟動安聯科技基金河流圖.bat」即可啟動</span>
+            <h1 class="hero-title" style="margin-top: 8px;">安聯台灣科技基金 動態淨值估值河流圖</h1>
+            <p class="hero-subtitle">
+                完整收錄自 <b>{min_date.strftime('%Y/%m/%d')} 至 {max_date.strftime('%Y/%m/%d')}</b> 之每日真實基金淨值數據。<br>
+                結合 $N$ 日滾動均線 ($MA$) 與標準差 ($\sigma$) 繪製估值河流區塊，即時評估當前淨值昂貴與便宜位階。
+            </p>
+        </div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# Sidebar Parameter Controls
+st.sidebar.header("⚙️ 估值河流圖條件設定")
+
+# 1. 時間區間選取
+st.sidebar.subheader("1. 時間區間選取")
+horizon_options = {
+    "近 1 個月": 1,
+    "近 3 個月": 3,
+    "近 6 個月 (半年)": 6,
+    "近 1 年": 12,
+    "近 3 年": 36,
+    "近 5 年": 60,
+    "全期間 (成立至今)": 0
+}
+selected_h_label = st.sidebar.selectbox(
+    "選擇時間範圍",
+    options=list(horizon_options.keys()),
+    index=0 # Default 1 month (近 1 個月)
+)
+selected_h_val = horizon_options[selected_h_label]
+
+st.sidebar.markdown("---")
+
+# 2. 均線週期選取 (MA Period)
+st.sidebar.subheader("2. 均線週期 (MA Period)")
+ma_period_options = {
+    "5日 均線 (極短線)": 5,
+    "10日 均線 (短線)": 10,
+    "20日 均線 (月線)": 20,
+    "60日 均線 (季線)": 60,
+    "120日 均線 (半年線)": 120,
+    "240日 均線 (年線)": 240
+}
+selected_ma_label = st.sidebar.selectbox(
+    "選擇 N 日滾動均線週期",
+    options=list(ma_period_options.keys()),
+    index=0 # Default 5-day MA (5日 均線)
+)
+selected_ma_period = ma_period_options[selected_ma_label]
+
+st.sidebar.markdown("---")
+
+# Button to reload live data
+if st.sidebar.button("🔄 即時連線更新淨值數據", type="primary", use_container_width=True):
+    with st.spinner("正在連線抓取最新淨值..."):
+        df_raw = fetch_allianz_nav_data(force_update=True)
+        st.session_state["df_raw"] = df_raw
+    st.toast("已為您更新最新基金歷史淨值！", icon="✅")
+    st.rerun()
+
+# Calculate Valuation River Bands
+df_sub, summary = calculate_river_bands(
+    df_raw,
+    ma_period=selected_ma_period,
+    time_horizon_months=selected_h_val
+)
+
+s = summary
+
+# 5 KPI Metric Cards Display
+st.markdown("### 📊 最新估值位階與核心指標")
+
+col1, col2, col3, col4, col5 = st.columns(5)
+
+with col1:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">最新淨值 (NAV)</div>
+        <div class="metric-value metric-neutral">${s['latest_nav']:.2f}</div>
+        <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">日期: {s['latest_date']}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col2:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">滾動均線 (MA {selected_ma_period}日)</div>
+        <div class="metric-value metric-neutral" style="color: #cbd5e1;">${s['latest_ma']:.2f}</div>
+        <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">中線基準價位</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col3:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">當前估值位階</div>
+        <div class="metric-value" style="color: {s['status_color']}; font-size: 1.35rem;">{s['status_str']}</div>
+        <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">滾動標準差σ位階</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+bias_val = s['bias_pct']
+bias_class_color = "#ef4444" if bias_val > 10 else ("#22c55e" if bias_val < -5 else "#4ade80")
+with col4:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">均線偏離率 (Bias %)</div>
+        <div class="metric-value" style="color: {bias_class_color};">{bias_val:+.2f}%</div>
+        <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">相較 MA 中線之乖離率</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with col5:
+    st.markdown(f"""
+    <div class="metric-card">
+        <div class="metric-label">2.0σ 河流價格區間</div>
+        <div class="metric-value metric-neutral" style="color: #a855f7; font-size: 1.25rem;">
+            ${s['lower_2']:.1f} ~ ${s['upper_2']:.1f}
+        </div>
+        <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">便宜價 ~ 昂貴價區間</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("<br>", unsafe_allow_html=True)
+
+# Plotly Interactive River Chart
+st.markdown(f"### 📈 淨值估值河流圖分析 ({selected_ma_label} / {selected_h_label})")
+
+fig = go.Figure()
+
+# 1. Lower 2 Line (Baseline for fill)
+fig.add_trace(go.Scatter(
+    x=df_sub['Date'],
+    y=df_sub['Lower_2'],
+    mode='lines',
+    line=dict(width=0.8, color='rgba(59, 130, 246, 0.5)'),
+    showlegend=False,
+    hoverinfo='skip'
+))
+
+# 2. Cheap Zone (Lower 2 to Lower 1) - Blue Fill
+fig.add_trace(go.Scatter(
+    x=df_sub['Date'],
+    y=df_sub['Lower_1'],
+    mode='lines',
+    line=dict(width=0.8, color='rgba(59, 130, 246, 0.5)'),
+    fill='tonexty',
+    fillcolor='rgba(59, 130, 246, 0.25)',
+    name='🔵 便宜區 (-2.0σ ~ -1.0σ)',
+    hovertemplate="日期: %{x|%Y/%m/%d}<br>便宜下界(-1.0σ): $%{y:.2f}"
+))
+
+# 3. Low Zone (Lower 1 to Center MA) - Green Fill
+fig.add_trace(go.Scatter(
+    x=df_sub['Date'],
+    y=df_sub['Center'],
+    mode='lines',
+    line=dict(width=1.5, color='#ffffff', dash='dash'),
+    fill='tonexty',
+    fillcolor='rgba(34, 197, 94, 0.20)',
+    name=f'⚪ 中線 (MA {selected_ma_period}日)',
+    hovertemplate="日期: %{x|%Y/%m/%d}<br>中線MA: $%{y:.2f}"
+))
+
+# 4. High Zone (Center MA to Upper 1) - Orange Fill
+fig.add_trace(go.Scatter(
+    x=df_sub['Date'],
+    y=df_sub['Upper_1'],
+    mode='lines',
+    line=dict(width=0.8, color='rgba(245, 158, 11, 0.5)'),
+    fill='tonexty',
+    fillcolor='rgba(245, 158, 11, 0.20)',
+    name='🟠 偏高區 (MA ~ +1.0σ)',
+    hovertemplate="日期: %{x|%Y/%m/%d}<br>偏高上界(+1.0σ): $%{y:.2f}"
+))
+
+# 5. Expensive Zone (Upper 1 to Upper 2) - Red Fill
+fig.add_trace(go.Scatter(
+    x=df_sub['Date'],
+    y=df_sub['Upper_2'],
+    mode='lines',
+    line=dict(width=0.8, color='rgba(239, 68, 68, 0.5)'),
+    fill='tonexty',
+    fillcolor='rgba(239, 68, 68, 0.25)',
+    name='🔴 昂貴區 (+1.0σ ~ +2.0σ)',
+    hovertemplate="日期: %{x|%Y/%m/%d}<br>昂貴上界(+2.0σ): $%{y:.2f}"
+))
+
+# 6. Actual Fund NAV Line
+fig.add_trace(go.Scatter(
+    x=df_sub['Date'],
+    y=df_sub['NAV'],
+    mode='lines',
+    line=dict(color='#38bdf8', width=2.8),
+    name='安聯台灣科技基金淨值 (NAV)',
+    hovertemplate="日期: %{x|%Y/%m/%d}<br>真實淨值: $%{y:.2f}"
+))
+
+# 7. Latest Price Marker
+now_year = datetime.now().year
+last_d = df_sub['Date'].iloc[-1]
+last_d_str = f"{last_d.year}/{last_d.month}/{last_d.day}" if last_d.year != now_year else f"{last_d.month}/{last_d.day}"
+fig.add_trace(go.Scatter(
+    x=[last_d],
+    y=[df_sub['NAV'].iloc[-1]],
+    mode='markers+text',
+    text=[f" 最新: ${df_sub['NAV'].iloc[-1]:.2f} ({last_d_str})"],
+    textposition="top right",
+    marker=dict(color='#facc15', size=10, symbol='diamond'),
+    name='最新淨值點位',
+    hoverinfo='skip'
+))
+
+fig.update_layout(
+    title=f"安聯台灣科技基金 淨值估值河流圖 ({selected_ma_label} / {selected_h_label})",
+    xaxis=dict(
+        title="日期",
+        tickformat="%Y/%m/%d"
+    ),
+    yaxis_title="基金淨值 (NTD)",
+    template="plotly_dark",
+    height=540,
+    hovermode="x unified",
+    margin=dict(l=40, r=40, t=60, b=40),
+    legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=1.02,
+        xanchor="right",
+        x=1
+    )
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
+# Data Table & CSV Export Section
+st.markdown("### 📋 歷史淨值與估值明細數據")
+
+df_export = df_sub.copy()
+df_export['Date_str'] = df_export['Date'].dt.strftime('%Y/%m/%d')
+df_export['Bias_Pct'] = ((df_export['NAV'] - df_export['Center']) / df_export['Center'] * 100.0).round(2)
+
+df_show = df_export[['Date_str', 'NAV', 'MA', 'Upper_2', 'Upper_1', 'Lower_1', 'Lower_2', 'Bias_Pct']].copy()
+df_show = df_show.rename(columns={
+    'Date_str': '交易日期',
+    'NAV': '基金淨值',
+    'MA': f'MA{selected_ma_period}日均線',
+    'Upper_2': '昂貴上界(+2.0σ)',
+    'Upper_1': '偏高上界(+1.0σ)',
+    'Lower_1': '偏地下界(-1.0σ)',
+    'Lower_2': '便宜下界(-2.0σ)',
+    'Bias_Pct': '均線偏離率(%)'
+})
+
+col_info, col_dl = st.columns([3, 1])
+with col_info:
+    st.write(f"當前展示區間共有 **{len(df_show)}** 個交易日數據：")
+with col_dl:
+    csv_bytes = df_show.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
+    st.download_button(
+        label="📥 下載明細 CSV",
+        data=csv_bytes,
+        file_name=f"Allianz_Tech_Fund_River_MA{selected_ma_period}_{summary['start_date']}_to_{summary['end_date']}.csv",
+        mime="text/csv"
+    )
+
+st.dataframe(df_show, use_container_width=True, hide_index=True)
+
+# Footer
+st.markdown("""
+<hr style="border-color: #334155;">
+<div style="text-align: center; color: #64748b; font-size: 0.85rem; padding-bottom: 20px;">
+    數據來源：中華民國證券投資信託暨顧問商業同業公會 (SITCA) / 臺灣銀行 MoneyDJ 基金歷史淨值真實端點<br>
+    本系統僅供估值與策略研究使用，過去績效不代表未來表現。
+</div>
+""", unsafe_allow_html=True)

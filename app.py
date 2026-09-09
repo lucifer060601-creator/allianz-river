@@ -1,4 +1,6 @@
+import os
 import streamlit as st
+import streamlit.components.v1 as components
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
@@ -6,6 +8,24 @@ from datetime import datetime
 
 from fetch_data import fetch_allianz_nav_data
 from river_calculator import calculate_river_bands
+
+# 自動確保 Streamlit 底層 static index.html 開啟手機雙指自由縮放 (user-scalable=yes)
+def ensure_mobile_zoom_enabled():
+    try:
+        static_index = os.path.join(os.path.dirname(st.__file__), 'static', 'index.html')
+        if os.path.exists(static_index):
+            with open(static_index, 'r', encoding='utf-8') as f:
+                content = f.read()
+            old_vp = 'content="width=device-width, initial-scale=1, shrink-to-fit=no"'
+            new_vp = 'content="width=device-width, initial-scale=1.0, minimum-scale=0.5, maximum-scale=5.0, user-scalable=yes"'
+            if old_vp in content:
+                content = content.replace(old_vp, new_vp)
+                with open(static_index, 'w', encoding='utf-8') as f:
+                    f.write(content)
+    except Exception:
+        pass
+
+ensure_mobile_zoom_enabled()
 
 # Page Configuration
 st.set_page_config(
@@ -15,12 +35,38 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# 即時動態注入解除手機縮放限制之 JavaScript (確保即便快取也支援雙指縮放)
+components.html("""
+<script>
+(function() {
+    try {
+        const doc = window.parent.document;
+        let vp = doc.querySelector("meta[name='viewport']");
+        if (!vp) {
+            vp = doc.createElement('meta');
+            vp.name = 'viewport';
+            doc.head.appendChild(vp);
+        }
+        vp.setAttribute('content', 'width=device-width, initial-scale=1.0, minimum-scale=0.5, maximum-scale=5.0, user-scalable=yes');
+        doc.documentElement.style.touchAction = 'manipulation';
+        doc.body.style.touchAction = 'manipulation';
+    } catch(e) {}
+})();
+</script>
+""", height=0, width=0)
+
 # Custom CSS for Dark Aesthetics
 st.markdown("""
 <style>
+    html, body {
+        touch-action: manipulation !important;
+        -webkit-text-size-adjust: 100% !important;
+    }
+    
     .stApp {
         background-color: #0e1117;
         color: #e0e6ed;
+        touch-action: manipulation !important;
     }
     
     .hero-container {
@@ -77,6 +123,10 @@ st.markdown("""
 
     /* Mobile Responsive Optimizations */
     @media (max-width: 768px) {
+        html, body, .stApp, section.main {
+            touch-action: manipulation !important;
+            -webkit-overflow-scrolling: touch !important;
+        }
         .hero-container {
             padding: 16px !important;
             margin-bottom: 16px !important;
@@ -274,12 +324,21 @@ with col3:
     """, unsafe_allow_html=True)
 
 bias_val = s['bias_pct']
-bias_class_color = "#ef4444" if bias_val > 10 else ("#22c55e" if bias_val < -5 else "#4ade80")
+if s['latest_nav'] > s['latest_ma']:
+    bias_class_color = "#ef4444"  # 紅字 (最新淨值大於均線)
+    bias_display = f"+{abs(bias_val):.2f}%"
+elif s['latest_nav'] < s['latest_ma']:
+    bias_class_color = "#22c55e"  # 綠字 (最新淨值小於均線)
+    bias_display = f"-{abs(bias_val):.2f}%"
+else:
+    bias_class_color = "#94a3b8"  # 平盤中性
+    bias_display = "0.00%"
+
 with col4:
     st.markdown(f"""
     <div class="metric-card">
         <div class="metric-label">均線偏離率 (Bias %)</div>
-        <div class="metric-value" style="color: {bias_class_color};">{bias_val:+.2f}%</div>
+        <div class="metric-value" style="color: {bias_class_color};">{bias_display}</div>
         <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">相較 MA 中線之乖離率</div>
     </div>
     """, unsafe_allow_html=True)
@@ -308,9 +367,9 @@ st.markdown("""
 <div class="chart-tips">
     <span class="tip-tag">📱 手機手勢</span>
     <span>👉 <b>單指滑動</b>：左右平移時間軸</span>
-    <span>✌️ <b>雙指捏合</b>：縮放時間範圍</span>
+    <span>✌️ <b>河流圖內雙指捏合</b>：縮放時間範圍</span>
     <span>👆 <b>連點兩下</b>：瞬間還原全景</span>
-    <span>右上角有 <b>[+] [-] [🏠]</b> 快速縮放鈕</span>
+    <span>🔍 <b>河流圖外雙指捏合</b>：自由縮放整個網頁與字體</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -489,7 +548,17 @@ with col_dl:
         mime="text/csv"
     )
 
-st.dataframe(df_show, use_container_width=True, hide_index=True)
+st.dataframe(
+    df_show,
+    use_container_width=True,
+    hide_index=True,
+    column_config={
+        "均線偏離率(%)": st.column_config.NumberColumn(
+            "均線偏離率(%)",
+            format="%+.2f%%"
+        )
+    }
+)
 
 # Footer
 st.markdown("""

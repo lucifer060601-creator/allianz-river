@@ -35,12 +35,15 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# 即時動態注入解除手機縮放限制之 JavaScript (確保即便快取也支援雙指縮放)
+# 即時動態注入解除手機縮放限制之 JavaScript 與雙指縮放處理 (確保全網頁與字體支援兩指縮放)
 components.html("""
 <script>
 (function() {
     try {
         const doc = window.parent.document;
+        if (!doc) return;
+
+        // 1. 設置主視窗 Viewport 支援縮放
         let vp = doc.querySelector("meta[name='viewport']");
         if (!vp) {
             vp = doc.createElement('meta');
@@ -48,9 +51,92 @@ components.html("""
             doc.head.appendChild(vp);
         }
         vp.setAttribute('content', 'width=device-width, initial-scale=1.0, minimum-scale=0.5, maximum-scale=5.0, user-scalable=yes');
-        doc.documentElement.style.touchAction = 'manipulation';
-        doc.body.style.touchAction = 'manipulation';
-    } catch(e) {}
+
+        // 2. 解除所有 touch-action 限制為 auto，恢復瀏覽器原生縮放能力
+        doc.documentElement.style.touchAction = 'auto';
+        doc.body.style.touchAction = 'auto';
+
+        // 3. 雙指捏合（Pinch-to-zoom）網頁與字體縮放監聽
+        let currentScale = 1.0;
+        let startDist = 0;
+        let baseScale = 1.0;
+        let isPinching = false;
+
+        function getTarget() {
+            return doc.querySelector('.stApp') || doc.body;
+        }
+
+        function applyScale(scale) {
+            const target = getTarget();
+            if (!target) return;
+            // 允許在 0.75x ~ 3.0x 之間自由縮放
+            const bounded = Math.min(Math.max(scale, 0.75), 3.0);
+            currentScale = bounded;
+            if ('zoom' in target.style) {
+                target.style.zoom = bounded;
+            } else {
+                target.style.transform = 'scale(' + bounded + ')';
+                target.style.transformOrigin = 'top center';
+            }
+        }
+
+        function getDistance(touches) {
+            const t1 = touches[0];
+            const t2 = touches[1];
+            return Math.hypot(t1.clientX - t2.clientX, t1.clientY - t2.clientY);
+        }
+
+        function isInsidePlot(el) {
+            if (!el) return false;
+            return !!(
+                el.closest && (
+                    el.closest('.js-plotly-plot') ||
+                    el.closest('[data-testid="stPlotlyChart"]') ||
+                    el.closest('.plotly')
+                )
+            );
+        }
+
+        // 監聽雙指開始
+        doc.addEventListener('touchstart', function(e) {
+            if (e.touches && e.touches.length === 2) {
+                // 若觸碰點在河流圖內，交給河流圖原生處理，絕不干擾河流圖！
+                if (isInsidePlot(e.touches[0].target) || isInsidePlot(e.touches[1].target)) {
+                    isPinching = false;
+                    return;
+                }
+                isPinching = true;
+                startDist = getDistance(e.touches);
+                baseScale = currentScale;
+            } else {
+                isPinching = false;
+            }
+        }, { passive: true });
+
+        // 監聽雙指捏合與張開
+        doc.addEventListener('touchmove', function(e) {
+            if (isPinching && e.touches && e.touches.length === 2) {
+                if (isInsidePlot(e.touches[0].target) || isInsidePlot(e.touches[1].target)) {
+                    return;
+                }
+                const dist = getDistance(e.touches);
+                if (startDist > 0) {
+                    const factor = dist / startDist;
+                    applyScale(baseScale * factor);
+                }
+            }
+        }, { passive: true });
+
+        // 雙指離開
+        doc.addEventListener('touchend', function(e) {
+            if (!e.touches || e.touches.length < 2) {
+                isPinching = false;
+            }
+        }, { passive: true });
+
+    } catch(e) {
+        console.error("Zoom handler:", e);
+    }
 })();
 </script>
 """, height=0, width=0)
@@ -59,14 +145,14 @@ components.html("""
 st.markdown("""
 <style>
     html, body {
-        touch-action: manipulation !important;
+        touch-action: auto !important;
         -webkit-text-size-adjust: 100% !important;
     }
     
     .stApp {
         background-color: #0e1117;
         color: #e0e6ed;
-        touch-action: manipulation !important;
+        touch-action: auto !important;
     }
     
     .hero-container {
@@ -124,7 +210,7 @@ st.markdown("""
     /* Mobile Responsive Optimizations */
     @media (max-width: 768px) {
         html, body, .stApp, section.main {
-            touch-action: manipulation !important;
+            touch-action: auto !important;
             -webkit-overflow-scrolling: touch !important;
         }
         .hero-container {
@@ -366,10 +452,9 @@ with col_reset:
 st.markdown("""
 <div class="chart-tips">
     <span class="tip-tag">📱 手機手勢</span>
-    <span>👉 <b>單指滑動</b>：左右平移時間軸</span>
-    <span>✌️ <b>河流圖內雙指捏合</b>：縮放時間範圍</span>
-    <span>👆 <b>連點兩下</b>：瞬間還原全景</span>
-    <span>🔍 <b>河流圖外雙指捏合</b>：自由縮放整個網頁與字體</span>
+    <span>👉 <b>單指滑動</b>：左右平移河流圖</span>
+    <span>✌️ <b>河流圖內雙指</b>：縮放時間軸</span>
+    <span>🔍 <b>河流圖外雙指</b>：兩指縮放全網頁與字體</span>
 </div>
 """, unsafe_allow_html=True)
 

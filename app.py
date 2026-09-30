@@ -6,7 +6,7 @@ import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime
 
-from fetch_data import fetch_allianz_nav_data
+from fetch_data import SUPPORTED_FUNDS, fetch_fund_nav_data, fetch_all_funds_nav_data
 from river_calculator import calculate_river_bands
 
 # 自動確保 Streamlit 底層 static index.html 開啟手機雙指自由縮放 (user-scalable=yes)
@@ -29,7 +29,7 @@ ensure_mobile_zoom_enabled()
 
 # Page Configuration
 st.set_page_config(
-    page_title="安聯台灣科技基金 淨值估值河流圖",
+    page_title="台股精選基金 淨值估值河流圖",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -280,17 +280,34 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Load Raw NAV Data - Always fetch latest NAV live from API on initial startup
-if "df_raw" not in st.session_state:
-    with st.spinner("🔄 系統啟動中，正在即時連線抓取最新淨值..."):
+# --- 基金標的選取 (Sidebar 頂部) ---
+st.sidebar.header("🎯 選擇基金標的")
+fund_options = {
+    "安聯台灣科技基金 (ACDD04)": "allianz_tech",
+    "野村中小基金 (ACIC08)": "nomura_small_cap"
+}
+selected_fund_label = st.sidebar.selectbox(
+    "選擇欲分析之基金",
+    options=list(fund_options.keys()),
+    index=0
+)
+selected_fund_key = fund_options[selected_fund_label]
+fund_info = SUPPORTED_FUNDS[selected_fund_key]
+
+# Load Raw NAV Data - Multi-fund cache in session_state
+if "funds_data" not in st.session_state:
+    st.session_state["funds_data"] = {}
+
+if selected_fund_key not in st.session_state["funds_data"]:
+    with st.spinner(f"🔄 正在載入 {fund_info['name']} 歷史淨值數據..."):
         try:
-            df_raw = fetch_allianz_nav_data(force_update=True)
-            st.session_state["df_raw"] = df_raw
+            df_raw = fetch_fund_nav_data(selected_fund_key, force_update=False)
+            st.session_state["funds_data"][selected_fund_key] = df_raw
         except Exception as e:
-            st.error(f"載入基金數據失敗: {e}")
+            st.error(f"載入 {fund_info['name']} 數據失敗: {e}")
             st.stop()
 else:
-    df_raw = st.session_state["df_raw"]
+    df_raw = st.session_state["funds_data"][selected_fund_key]
 
 try:
     min_date = df_raw['Date'].min().date()
@@ -304,11 +321,12 @@ st.markdown(f"""
 <div class="hero-container">
     <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;">
         <div>
-            <span class="fund-badge">042004</span>
-            <span class="fund-badge">ACDD04</span>
-            <span class="fund-badge">台幣級別</span>
-            <span class="fund-badge" style="background-color: #16a34a;">雙擊「啟動安聯科技基金河流圖.bat」即可啟動</span>
-            <h1 class="hero-title" style="margin-top: 8px;">安聯台灣科技基金 動態淨值估值河流圖</h1>
+            <span class="fund-badge">{fund_info['sitca_code']}</span>
+            <span class="fund-badge">{fund_info['fund_code']}</span>
+            <span class="fund-badge">{fund_info['category']}</span>
+            <span class="fund-badge">{fund_info['currency']}</span>
+            <span class="fund-badge" style="background-color: #16a34a;">雙擊「基金河流圖.bat」即可啟動</span>
+            <h1 class="hero-title" style="margin-top: 8px;">{fund_info['name']} 動態淨值估值河流圖</h1>
             <p class="hero-subtitle">
                 完整收錄自 <b>{min_date.strftime('%Y/%m/%d')} 至 {max_date.strftime('%Y/%m/%d')}</b> 之每日真實基金淨值數據。<br>
                 結合 $N$ 日滾動均線 ($MA$) 與標準差 ($\sigma$) 繪製估值河流區塊，即時評估當前淨值昂貴與便宜位階。
@@ -319,6 +337,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # Sidebar Parameter Controls
+st.sidebar.markdown("---")
 st.sidebar.header("⚙️ 估值河流圖條件設定")
 
 # 1. 時間區間選取
@@ -361,11 +380,11 @@ selected_ma_period = ma_period_options[selected_ma_label]
 st.sidebar.markdown("---")
 
 # Button to reload live data
-if st.sidebar.button("🔄 即時連線更新淨值數據", type="primary", use_container_width=True):
-    with st.spinner("正在連線抓取最新淨值..."):
-        df_raw = fetch_allianz_nav_data(force_update=True)
-        st.session_state["df_raw"] = df_raw
-    st.toast("已為您更新最新基金歷史淨值！", icon="✅")
+if st.sidebar.button(f"🔄 即時連線更新【{fund_info['short_name']}】數據", type="primary", use_container_width=True):
+    with st.spinner(f"正在連線抓取 {fund_info['name']} 最新淨值..."):
+        df_raw = fetch_fund_nav_data(selected_fund_key, force_update=True)
+        st.session_state["funds_data"][selected_fund_key] = df_raw
+    st.toast(f"已為您更新 {fund_info['name']} 最新歷史淨值！", icon="✅")
     st.rerun()
 
 # Calculate Valuation River Bands
@@ -444,7 +463,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 col_title, col_reset = st.columns([3, 1])
 with col_title:
-    st.markdown(f"### 📈 淨值估值河流圖分析 ({selected_ma_label} / {selected_h_label})")
+    st.markdown(f"### 📈 {fund_info['name']} 估值河流圖分析 ({selected_ma_label} / {selected_h_label})")
 with col_reset:
     if st.button("🔄 一鍵還原原圖", use_container_width=True, help="點擊立刻恢復至最初河流圖視野"):
         st.rerun()
@@ -629,7 +648,7 @@ with col_dl:
     st.download_button(
         label="📥 下載明細 CSV",
         data=csv_bytes,
-        file_name=f"Allianz_Tech_Fund_River_MA{selected_ma_period}_{summary['start_date']}_to_{summary['end_date']}.csv",
+        file_name=f"{fund_info['short_name']}_River_MA{selected_ma_period}_{summary['start_date']}_to_{summary['end_date']}.csv",
         mime="text/csv"
     )
 

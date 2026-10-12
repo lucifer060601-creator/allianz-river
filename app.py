@@ -29,7 +29,7 @@ ensure_mobile_zoom_enabled()
 
 # Page Configuration
 st.set_page_config(
-    page_title="台股精選基金 淨值估值河流圖",
+    page_title="台股精選基金與ETF 估值河流圖",
     page_icon="📈",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -133,6 +133,19 @@ components.html("""
                 isPinching = false;
             }
         }, { passive: true });
+
+        // 監聽「一鍵還原原圖」按鈕點擊，同步重設全網頁縮放
+        doc.addEventListener('click', function(e) {
+            const btn = e.target && e.target.closest ? e.target.closest('button') : null;
+            if (btn && btn.textContent && btn.textContent.includes('一鍵還原原圖')) {
+                applyScale(1.0);
+                const target = getTarget();
+                if (target) {
+                    if ('zoom' in target.style) target.style.zoom = '1';
+                    target.style.transform = '';
+                }
+            }
+        }, true);
 
     } catch(e) {
         console.error("Zoom handler:", e);
@@ -280,26 +293,33 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 基金標的選取 (Sidebar 頂部) ---
-st.sidebar.header("🎯 選擇基金標的")
+# --- 標的選取 (Sidebar 頂部) ---
+st.sidebar.header("🎯 選擇分析標的")
 fund_options = {
-    "安聯台灣科技基金 (ACDD04)": "allianz_tech",
-    "野村中小基金 (ACIC08)": "nomura_small_cap"
+    "📊 主動統一台股增長 (00981A) [ETF 股價]": "etf_00981a",
+    "📊 主動統一升級50 (00403A) [ETF 股價]": "etf_00403a",
+    "📈 安聯台灣科技基金 (ACDD04) [基金淨值]": "allianz_tech",
+    "📈 野村中小基金 (ACIC08) [基金淨值]": "nomura_small_cap"
 }
 selected_fund_label = st.sidebar.selectbox(
-    "選擇欲分析之基金",
+    "選擇欲分析之標的 (ETF股價 / 基金淨值)",
     options=list(fund_options.keys()),
     index=0
 )
 selected_fund_key = fund_options[selected_fund_label]
 fund_info = SUPPORTED_FUNDS[selected_fund_key]
 
-# Load Raw NAV Data - Multi-fund cache in session_state
+is_etf = fund_info.get("type") == "etf"
+price_label = fund_info.get("price_label", "收盤股價" if is_etf else "基金淨值")
+price_short = fund_info.get("price_short", "股價" if is_etf else "淨值")
+price_code = "PRICE" if is_etf else "NAV"
+
+# Load Raw NAV / Price Data - Multi-target cache in session_state
 if "funds_data" not in st.session_state:
     st.session_state["funds_data"] = {}
 
 if selected_fund_key not in st.session_state["funds_data"]:
-    with st.spinner(f"🔄 正在載入 {fund_info['name']} 歷史淨值數據..."):
+    with st.spinner(f"🔄 正在載入 {fund_info['name']} 歷史{price_label}數據..."):
         try:
             df_raw = fetch_fund_nav_data(selected_fund_key, force_update=False)
             st.session_state["funds_data"][selected_fund_key] = df_raw
@@ -313,23 +333,24 @@ try:
     min_date = df_raw['Date'].min().date()
     max_date = df_raw['Date'].max().date()
 except Exception as e:
-    st.error(f"解析基金日期失敗: {e}")
+    st.error(f"解析標的日期失敗: {e}")
     st.stop()
 
 # Header Banner
+badge_type_html = f"<span class='fund-badge' style='background-color: #6366f1;'>{'主動式 ETF (股價)' if is_etf else '共同基金 (淨值)'}</span>"
 st.markdown(f"""
 <div class="hero-container">
     <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;">
         <div>
-            <span class="fund-badge">{fund_info['sitca_code']}</span>
             <span class="fund-badge">{fund_info['fund_code']}</span>
+            {badge_type_html}
             <span class="fund-badge">{fund_info['category']}</span>
             <span class="fund-badge">{fund_info['currency']}</span>
             <span class="fund-badge" style="background-color: #16a34a;">雙擊「基金河流圖.bat」即可啟動</span>
-            <h1 class="hero-title" style="margin-top: 8px;">{fund_info['name']} 動態淨值估值河流圖</h1>
+            <h1 class="hero-title" style="margin-top: 8px;">{fund_info['name']} 動態{price_short}估值河流圖</h1>
             <p class="hero-subtitle">
-                完整收錄自 <b>{min_date.strftime('%Y/%m/%d')} 至 {max_date.strftime('%Y/%m/%d')}</b> 之每日真實基金淨值數據。<br>
-                結合 $N$ 日滾動均線 ($MA$) 與標準差 ($\sigma$) 繪製估值河流區塊，即時評估當前淨值昂貴與便宜位階。
+                完整收錄自 <b>{min_date.strftime('%Y/%m/%d')} 至 {max_date.strftime('%Y/%m/%d')}</b> 之每日真實{price_label}數據。<br>
+                結合 $N$ 日滾動均線 ($MA$) 與標準差 ($\sigma$) 繪製估值河流區塊，即時評估當前{price_short}昂貴與便宜位階。
             </p>
         </div>
     </div>
@@ -381,10 +402,10 @@ st.sidebar.markdown("---")
 
 # Button to reload live data
 if st.sidebar.button(f"🔄 即時連線更新【{fund_info['short_name']}】數據", type="primary", use_container_width=True):
-    with st.spinner(f"正在連線抓取 {fund_info['name']} 最新淨值..."):
+    with st.spinner(f"正在連線抓取 {fund_info['name']} 最新{price_label}..."):
         df_raw = fetch_fund_nav_data(selected_fund_key, force_update=True)
         st.session_state["funds_data"][selected_fund_key] = df_raw
-    st.toast(f"已為您更新 {fund_info['name']} 最新歷史淨值！", icon="✅")
+    st.toast(f"已為您更新 {fund_info['name']} 最新歷史{price_label}！", icon="✅")
     st.rerun()
 
 # Calculate Valuation River Bands
@@ -404,7 +425,7 @@ col1, col2, col3, col4, col5 = st.columns(5)
 with col1:
     st.markdown(f"""
     <div class="metric-card">
-        <div class="metric-label">最新淨值 (NAV)</div>
+        <div class="metric-label">最新{price_label} ({price_code})</div>
         <div class="metric-value metric-neutral">${s['latest_nav']:.2f}</div>
         <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">日期: {s['latest_date']}</div>
     </div>
@@ -430,10 +451,10 @@ with col3:
 
 bias_val = s['bias_pct']
 if s['latest_nav'] > s['latest_ma']:
-    bias_class_color = "#ef4444"  # 紅字 (最新淨值大於均線)
+    bias_class_color = "#ef4444"  # 紅字 (最新價格大於均線)
     bias_display = f"+{abs(bias_val):.2f}%"
 elif s['latest_nav'] < s['latest_ma']:
-    bias_class_color = "#22c55e"  # 綠字 (最新淨值小於均線)
+    bias_class_color = "#22c55e"  # 綠字 (最新價格小於均線)
     bias_display = f"-{abs(bias_val):.2f}%"
 else:
     bias_class_color = "#94a3b8"  # 平盤中性
@@ -461,11 +482,15 @@ with col5:
 
 st.markdown("<br>", unsafe_allow_html=True)
 
+if "chart_reset_count" not in st.session_state:
+    st.session_state["chart_reset_count"] = 0
+
 col_title, col_reset = st.columns([3, 1])
 with col_title:
     st.markdown(f"### 📈 {fund_info['name']} 估值河流圖分析 ({selected_ma_label} / {selected_h_label})")
 with col_reset:
     if st.button("🔄 一鍵還原原圖", use_container_width=True, help="點擊立刻恢復至最初河流圖視野"):
+        st.session_state["chart_reset_count"] += 1
         st.rerun()
 
 st.markdown("""
@@ -537,14 +562,14 @@ fig.add_trace(go.Scatter(
     hovertemplate="昂貴區: $%{y:.2f}<extra></extra>"
 ))
 
-# 6. Actual Fund NAV Line
+# 6. Actual Price / NAV Line
 fig.add_trace(go.Scatter(
     x=df_sub['Date'],
     y=df_sub['NAV'],
     mode='lines',
     line=dict(color='#38bdf8', width=2.8),
-    name='基金淨值',
-    hovertemplate="基金淨值: $%{y:.2f}<extra></extra>"
+    name=price_label,
+    hovertemplate=f"{price_label}: $%{{y:.2f}}<extra></extra>"
 ))
 
 # 7. Latest Price Marker
@@ -558,7 +583,7 @@ fig.add_trace(go.Scatter(
     text=[f" 最新: ${df_sub['NAV'].iloc[-1]:.2f} ({last_d_str})"],
     textposition="top right",
     marker=dict(color='#facc15', size=10, symbol='diamond'),
-    name='最新淨值點位',
+    name=f'最新{price_short}點位',
     hoverinfo='skip'
 ))
 
@@ -573,7 +598,11 @@ min_y = float(df_sub['Lower_2'].min())
 max_y = float(max(df_sub['Upper_2'].max(), df_sub['NAV'].max()))
 y_pad = (max_y - min_y) * 0.06
 
+chart_reset_token = st.session_state.get("chart_reset_count", 0)
+chart_key = f"river_chart_{selected_fund_key}_{selected_h_val}_{selected_ma_period}_{chart_reset_token}"
+
 fig.update_layout(
+    uirevision=chart_key,
     title=None, # 不在圖表畫布內置標題，徹底杜絕與右上角放大縮小按鈕重疊衝突！
     xaxis=dict(
         title=None,
@@ -588,7 +617,7 @@ fig.update_layout(
         fixedrange=False
     ),
     yaxis=dict(
-        title="淨值 (NTD)",
+        title=f"{price_label} (NTD)",
         showgrid=True,
         gridcolor="#1e293b",
         range=[min_y - y_pad, max_y + y_pad],
@@ -619,10 +648,10 @@ chart_config = {
     'responsive': True
 }
 
-st.plotly_chart(fig, use_container_width=True, config=chart_config)
+st.plotly_chart(fig, use_container_width=True, config=chart_config, key=chart_key)
 
 # Data Table & CSV Export Section
-st.markdown("### 📋 歷史淨值與估值明細數據")
+st.markdown(f"### 📋 歷史{price_label}與估值明細數據")
 
 df_export = df_sub.copy()
 df_export['Date_str'] = df_export['Date'].dt.strftime('%Y/%m/%d')
@@ -631,7 +660,7 @@ df_export['Bias_Pct'] = ((df_export['NAV'] - df_export['Center']) / df_export['C
 df_show = df_export[['Date_str', 'NAV', 'MA', 'Upper_2', 'Upper_1', 'Lower_1', 'Lower_2', 'Bias_Pct']].copy()
 df_show = df_show.rename(columns={
     'Date_str': '交易日期',
-    'NAV': '基金淨值',
+    'NAV': price_label,
     'MA': f'MA{selected_ma_period}日均線',
     'Upper_2': '昂貴上界(+2.0σ)',
     'Upper_1': '偏高上界(+1.0σ)',
@@ -648,7 +677,7 @@ with col_dl:
     st.download_button(
         label="📥 下載明細 CSV",
         data=csv_bytes,
-        file_name=f"{fund_info['short_name']}_River_MA{selected_ma_period}_{summary['start_date']}_to_{summary['end_date']}.csv",
+        file_name=f"{fund_info['fund_code']}_{fund_info['short_name']}_River_MA{selected_ma_period}_{summary['start_date']}_to_{summary['end_date']}.csv",
         mime="text/csv"
     )
 
@@ -668,7 +697,7 @@ st.dataframe(
 st.markdown("""
 <hr style="border-color: #334155;">
 <div style="text-align: center; color: #64748b; font-size: 0.85rem; padding-bottom: 20px;">
-    數據來源：中華民國證券投資信託暨顧問商業同業公會 (SITCA) / 臺灣銀行 MoneyDJ 基金歷史淨值真實端點<br>
+    數據來源：臺灣證券交易所 (TWSE) / Yahoo 奇摩股市 / SITCA 公會 / MoneyDJ 真實歷史數據端點<br>
     本系統僅供估值與策略研究使用，過去績效不代表未來表現。
 </div>
 """, unsafe_allow_html=True)

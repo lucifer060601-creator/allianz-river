@@ -296,10 +296,15 @@ st.markdown("""
 # --- 標的選取 (Sidebar 頂部) ---
 st.sidebar.header("🎯 選擇分析標的")
 fund_options = {
-    "📊 主動統一台股增長 (00981A) [ETF 股價]": "etf_00981a",
-    "📊 主動統一升級50 (00403A) [ETF 股價]": "etf_00403a",
+    # --- 共同基金 (基金在前，依開頭名排序) ---
     "📈 安聯台灣科技基金 (ACDD04) [基金淨值]": "allianz_tech",
-    "📈 野村中小基金 (ACIC08) [基金淨值]": "nomura_small_cap"
+    "📈 野村中小基金 (ACIC08) [基金淨值]": "nomura_small_cap",
+    "📈 野村鴻運基金 (AC0001) [基金淨值]": "nomura_fortune",
+    # --- ETF (ETF在後，依開頭名排序) ---
+    "📊 中信特選金融 (00917) [ETF 股價]": "etf_00917",
+    "📊 元大MSCI金融 (0055) [ETF 股價]": "etf_0055",
+    "📊 主動統一升級50 (00403A) [ETF 股價]": "etf_00403a",
+    "📊 主動統一台股增長 (00981A) [ETF 股價]": "etf_00981a"
 }
 selected_fund_label = st.sidebar.selectbox(
     "選擇欲分析之標的 (ETF股價 / 基金淨值)",
@@ -337,7 +342,11 @@ except Exception as e:
     st.stop()
 
 # Header Banner
-badge_type_html = f"<span class='fund-badge' style='background-color: #6366f1;'>{'主動式 ETF (股價)' if is_etf else '共同基金 (淨值)'}</span>"
+if is_etf:
+    badge_name = "主動式 ETF (股價)" if "主動" in fund_info.get("category", "") else "指數型 ETF (股價)"
+else:
+    badge_name = "共同基金 (淨值)"
+badge_type_html = f"<span class='fund-badge' style='background-color: #6366f1;'>{badge_name}</span>"
 st.markdown(f"""
 <div class="hero-container">
     <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap;">

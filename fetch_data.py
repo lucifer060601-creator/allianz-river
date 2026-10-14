@@ -18,40 +18,7 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
 # Supported funds and ETFs configuration
 SUPPORTED_FUNDS: Dict[str, Dict[str, Any]] = {
-    "etf_00981a": {
-        "id": "etf_00981a",
-        "name": "主動統一台股增長 (00981A)",
-        "short_name": "統一台股增長",
-        "fund_code": "00981A",
-        "sitca_code": "00981A",
-        "isin_code": "TW00000981A6",
-        "currency": "台幣 (TWD)",
-        "category": "主動型 ETF (股票型)",
-        "type": "etf",
-        "price_label": "收盤股價",
-        "price_short": "股價",
-        "symbol_tw": "00981A.TW",
-        "cache_filename": "etf_00981a_price_river.csv",
-        "fallback_start_nav": 10.0,
-        "fallback_growth": 22.0,
-    },
-    "etf_00403a": {
-        "id": "etf_00403a",
-        "name": "主動統一升級50 (00403A)",
-        "short_name": "統一升級50",
-        "fund_code": "00403A",
-        "sitca_code": "00403A",
-        "isin_code": "TW00000403A9",
-        "currency": "台幣 (TWD)",
-        "category": "主動型 ETF (股票型)",
-        "type": "etf",
-        "price_label": "收盤股價",
-        "price_short": "股價",
-        "symbol_tw": "00403A.TW",
-        "cache_filename": "etf_00403a_price_river.csv",
-        "fallback_start_nav": 10.0,
-        "fallback_growth": 1.2,
-    },
+    # --- 共同基金 (基金在前，依開頭名排序) ---
     "allianz_tech": {
         "id": "allianz_tech",
         "name": "安聯台灣科技基金",
@@ -83,6 +50,91 @@ SUPPORTED_FUNDS: Dict[str, Dict[str, Any]] = {
         "cache_filename": "nomura_small_cap_nav_river.csv",
         "fallback_start_nav": 45.0,
         "fallback_growth": 610.0,
+    },
+    "nomura_fortune": {
+        "id": "nomura_fortune",
+        "name": "野村鴻運基金",
+        "short_name": "野村鴻運",
+        "fund_code": "AC0001",
+        "sitca_code": "006034",
+        "isin_code": "TW000T3219Y0",
+        "currency": "台幣級別",
+        "category": "一般股票型",
+        "type": "fund",
+        "price_label": "基金淨值",
+        "price_short": "淨值",
+        "cache_filename": "nomura_fortune_nav_river.csv",
+        "fallback_start_nav": 21.0,
+        "fallback_growth": 290.0,
+    },
+    # --- ETF (ETF在後，依開頭名排序) ---
+    "etf_00917": {
+        "id": "etf_00917",
+        "name": "中信特選金融 (00917)",
+        "short_name": "中信金融",
+        "fund_code": "00917",
+        "sitca_code": "00917",
+        "isin_code": "TW0000091701",
+        "currency": "台幣 (TWD)",
+        "category": "海外指數型 ETF (金融數據)",
+        "type": "etf",
+        "price_label": "收盤股價",
+        "price_short": "股價",
+        "symbol_tw": "00917.TW",
+        "cache_filename": "etf_00917_price_river.csv",
+        "fallback_start_nav": 15.0,
+        "fallback_growth": 7.5,
+    },
+    "etf_0055": {
+        "id": "etf_0055",
+        "name": "元大MSCI金融 (0055)",
+        "short_name": "元大金融",
+        "fund_code": "0055",
+        "sitca_code": "0055",
+        "isin_code": "TW0000055003",
+        "currency": "台幣 (TWD)",
+        "category": "指數股票型 (金融保險)",
+        "type": "etf",
+        "price_label": "收盤股價",
+        "price_short": "股價",
+        "symbol_tw": "0055.TW",
+        "cache_filename": "etf_0055_price_river.csv",
+        "fallback_start_nav": 18.0,
+        "fallback_growth": 32.0,
+    },
+    "etf_00403a": {
+        "id": "etf_00403a",
+        "name": "主動統一升級50 (00403A)",
+        "short_name": "統一升級50",
+        "fund_code": "00403A",
+        "sitca_code": "00403A",
+        "isin_code": "TW00000403A9",
+        "currency": "台幣 (TWD)",
+        "category": "主動型 ETF (股票型)",
+        "type": "etf",
+        "price_label": "收盤股價",
+        "price_short": "股價",
+        "symbol_tw": "00403A.TW",
+        "cache_filename": "etf_00403a_price_river.csv",
+        "fallback_start_nav": 10.0,
+        "fallback_growth": 1.2,
+    },
+    "etf_00981a": {
+        "id": "etf_00981a",
+        "name": "主動統一台股增長 (00981A)",
+        "short_name": "統一台股增長",
+        "fund_code": "00981A",
+        "sitca_code": "00981A",
+        "isin_code": "TW00000981A6",
+        "currency": "台幣 (TWD)",
+        "category": "主動型 ETF (股票型)",
+        "type": "etf",
+        "price_label": "收盤股價",
+        "price_short": "股價",
+        "symbol_tw": "00981A.TW",
+        "cache_filename": "etf_00981a_price_river.csv",
+        "fallback_start_nav": 10.0,
+        "fallback_growth": 22.0,
     }
 }
 
@@ -98,6 +150,10 @@ def generate_fallback_data(fund_key: str = "allianz_tech") -> pd.DataFrame:
             start_date = datetime(2025, 5, 15)
         elif fund_key == "etf_00403a":
             start_date = datetime(2026, 4, 28)
+        elif fund_key == "etf_0055":
+            start_date = datetime(2020, 1, 1)
+        elif fund_key == "etf_00917":
+            start_date = datetime(2022, 8, 18)
         else:
             start_date = datetime(2025, 1, 1)
     else:
@@ -293,6 +349,10 @@ def fetch_allianz_nav_data(force_update: bool = False) -> pd.DataFrame:
 def fetch_nomura_nav_data(force_update: bool = False) -> pd.DataFrame:
     """Fetch live NAV data for Nomura Taiwan Small Cap Fund."""
     return fetch_fund_nav_data("nomura_small_cap", force_update=force_update)
+
+def fetch_nomura_fortune_nav_data(force_update: bool = False) -> pd.DataFrame:
+    """Fetch live NAV data for Nomura Taiwan Growth Selection (Hongyun) Fund."""
+    return fetch_fund_nav_data("nomura_fortune", force_update=force_update)
 
 def fetch_all_funds_nav_data(force_update: bool = False) -> None:
     """Fetch and cache live NAV/stock price data for all supported funds and ETFs."""

@@ -403,7 +403,7 @@ ma_period_options = {
 selected_ma_label = st.sidebar.selectbox(
     "選擇 N 日滾動均線週期",
     options=list(ma_period_options.keys()),
-    index=0 # Default 5-day MA (5日 均線)
+    index=1 # Default 10-day MA (10日 均線)
 )
 selected_ma_period = ma_period_options[selected_ma_label]
 

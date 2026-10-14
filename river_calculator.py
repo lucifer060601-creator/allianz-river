@@ -5,7 +5,7 @@ from typing import Dict, Any, Tuple
 
 def calculate_river_bands(
     df_input: pd.DataFrame,
-    ma_period: int = 60,
+    ma_period: int = 10,
     time_horizon_months: float = 36.0
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """

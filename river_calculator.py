@@ -51,21 +51,24 @@ def calculate_river_bands(
     
     bias_pct = ((latest_nav - latest_ma) / latest_ma * 100.0) if latest_ma > 0 else 0.0
     
-    # Determine valuation level status
+    # Determine valuation level status based on River chart color zones
     if latest_nav > latest_upper2:
-        status_str = "🔴 昂貴區 (高於 +2.0σ)"
+        status_str = "🔴 昂貴區 (高於 2σ)"
         status_color = "#ef4444"
     elif latest_nav > latest_upper1:
-        status_str = "🟠 偏高區 (+1.0σ ~ +2.0σ)"
+        status_str = "🔴 昂貴區 (1σ ~ 2σ)"
+        status_color = "#ef4444"
+    elif latest_nav > latest_ma:
+        status_str = "🟠 偏高區 (MA ~ 1σ)"
         status_color = "#f59e0b"
     elif latest_nav >= latest_lower1:
-        status_str = "⚪ 合理區 (-1.0σ ~ +1.0σ)"
-        status_color = "#e2e8f0"
-    elif latest_nav >= latest_lower2:
-        status_str = "🟢 偏低區 (-2.0σ ~ -1.0σ)"
+        status_str = "🟢 偏低區 (-1σ ~ MA)"
         status_color = "#22c55e"
+    elif latest_nav >= latest_lower2:
+        status_str = "🔵 便宜區 (-2σ ~ -1σ)"
+        status_color = "#3b82f6"
     else:
-        status_str = "🔵 便宜區 (低於 -2.0σ)"
+        status_str = "🔵 便宜區 (低於 -2σ)"
         status_color = "#3b82f6"
         
     now_year = datetime.now().year

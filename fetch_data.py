@@ -183,10 +183,11 @@ def generate_fallback_data(fund_key: str = "allianz_tech") -> pd.DataFrame:
     })
     return df
 
-def fetch_etf_stock_price(fund_key: str, force_update: bool = False) -> pd.DataFrame:
+def fetch_etf_stock_price(fund_key: str, force_update: bool = False, full_history: bool = False) -> pd.DataFrame:
     """
     Fetch live daily stock price for Taiwan ETF from Yahoo Finance chart endpoint.
     Caches to local CSV file and falls back to cached/synthetic data if network fails.
+    By default (full_history=False), fetches recent 3 years for fast loading.
     """
     fund_info = SUPPORTED_FUNDS[fund_key]
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -208,10 +209,13 @@ def fetch_etf_stock_price(fund_key: str, force_update: bool = False) -> pd.DataF
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
 
-    # 1. Primary endpoint: Yahoo Finance chart API (provides complete 5y history in one fast request)
+    range_param = "max" if full_history else "3y"
+    history_label = "成立至今全歷史" if full_history else "近 3 年"
+
+    # 1. Primary endpoint: Yahoo Finance chart API
     try:
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=5y&interval=1d"
-        print(f"[Fetcher] Requesting live ETF stock price for {fund_info['name']} ({symbol})...")
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range={range_param}&interval=1d"
+        print(f"[Fetcher] Requesting live ETF stock price for {fund_info['name']} ({symbol}, {history_label})...")
         res = requests.get(url, headers=headers, timeout=12)
         res.raise_for_status()
         data = res.json()
@@ -228,6 +232,19 @@ def fetch_etf_stock_price(fund_key: str, force_update: bool = False) -> pd.DataF
         if records:
             df = pd.DataFrame(records)
             df['Date'] = pd.to_datetime(df['Date'])
+
+            # Merge with existing older cache if updating 3y so full history isn't overwritten
+            if os.path.exists(cache_path) and not full_history:
+                try:
+                    old_df = pd.read_csv(cache_path)
+                    old_df['Date'] = pd.to_datetime(old_df['Date'])
+                    min_new_date = df['Date'].min()
+                    older_records = old_df[old_df['Date'] < min_new_date]
+                    if not older_records.empty:
+                        df = pd.concat([older_records, df], ignore_index=True)
+                except Exception:
+                    pass
+
             df = df.drop_duplicates(subset=['Date']).sort_values('Date').reset_index(drop=True)
 
             # Save to cache CSV
@@ -256,10 +273,11 @@ def fetch_etf_stock_price(fund_key: str, force_update: bool = False) -> pd.DataF
     df_to_save.to_csv(cache_path, index=False, encoding='utf-8-sig')
     return df_fallback
 
-def fetch_fund_nav_data(fund_key: str = "allianz_tech", force_update: bool = False) -> pd.DataFrame:
+def fetch_fund_nav_data(fund_key: str = "allianz_tech", force_update: bool = False, full_history: bool = False) -> pd.DataFrame:
     """
     Fetch live NAV or stock price data for specified fund / ETF.
     Caches to local CSV file and falls back to cached/synthetic data if network fails.
+    By default (full_history=False), fetches recent 3 years for fast loading.
     """
     if fund_key not in SUPPORTED_FUNDS:
         fund_key = "allianz_tech"
@@ -268,7 +286,7 @@ def fetch_fund_nav_data(fund_key: str = "allianz_tech", force_update: bool = Fal
     
     # Route ETF targets to dedicated stock price fetcher
     if fund_info.get("type") == "etf":
-        return fetch_etf_stock_price(fund_key, force_update=force_update)
+        return fetch_etf_stock_price(fund_key, force_update=force_update, full_history=full_history)
 
     os.makedirs(DATA_DIR, exist_ok=True)
     cache_path = os.path.join(DATA_DIR, fund_info["cache_filename"])
@@ -288,10 +306,20 @@ def fetch_fund_nav_data(fund_key: str = "allianz_tech", force_update: bool = Fal
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
     
-    nav_url = f"https://fund.bot.com.tw/w/bcd/tBCDNavList.djbcd?a={fund_info['fund_code']}&c=2018-1-1&d=2026-12-31"
+    if full_history:
+        start_dt_str = "2000-1-1"
+        history_label = "成立至今全歷史"
+    else:
+        # 預設抓取近 3 年 (往前推 3 年 + 30 天保證足夠覆蓋 36 個月與 240 日均線)
+        three_years_ago = (datetime.now() - timedelta(days=3 * 365 + 30)).strftime("%Y-%m-%d")
+        start_dt_str = three_years_ago
+        history_label = "近 3 年"
+
+    end_dt_str = datetime.now().strftime("%Y-%m-%d")
+    nav_url = f"https://fund.bot.com.tw/w/bcd/tBCDNavList.djbcd?a={fund_info['fund_code']}&c={start_dt_str}&d={end_dt_str}"
     
     try:
-        print(f"[Fetcher] Requesting live NAV data for {fund_info['name']} ({fund_info['fund_code']})...")
+        print(f"[Fetcher] Requesting live NAV data for {fund_info['name']} ({fund_info['fund_code']}, {history_label})...")
         res = requests.get(nav_url, headers=headers, timeout=12)
         res.raise_for_status()
         
@@ -314,7 +342,20 @@ def fetch_fund_nav_data(fund_key: str = "allianz_tech", force_update: bool = Fal
             if records:
                 df = pd.DataFrame(records)
                 df['Date'] = pd.to_datetime(df['Date'])
-                df = df.sort_values('Date').reset_index(drop=True)
+
+                # Merge with existing older cache if updating 3y so full history isn't overwritten
+                if os.path.exists(cache_path) and not full_history:
+                    try:
+                        old_df = pd.read_csv(cache_path)
+                        old_df['Date'] = pd.to_datetime(old_df['Date'])
+                        min_new_date = df['Date'].min()
+                        older_records = old_df[old_df['Date'] < min_new_date]
+                        if not older_records.empty:
+                            df = pd.concat([older_records, df], ignore_index=True)
+                    except Exception:
+                        pass
+
+                df = df.drop_duplicates(subset=['Date']).sort_values('Date').reset_index(drop=True)
                 
                 # Save to cache CSV
                 df_to_save = df.copy()
@@ -342,22 +383,22 @@ def fetch_fund_nav_data(fund_key: str = "allianz_tech", force_update: bool = Fal
     df_to_save.to_csv(cache_path, index=False, encoding='utf-8-sig')
     return df_fallback
 
-def fetch_allianz_nav_data(force_update: bool = False) -> pd.DataFrame:
+def fetch_allianz_nav_data(force_update: bool = False, full_history: bool = False) -> pd.DataFrame:
     """Fetch live NAV data for Allianz Taiwan Tech Fund (backward compatibility)."""
-    return fetch_fund_nav_data("allianz_tech", force_update=force_update)
+    return fetch_fund_nav_data("allianz_tech", force_update=force_update, full_history=full_history)
 
-def fetch_nomura_nav_data(force_update: bool = False) -> pd.DataFrame:
+def fetch_nomura_nav_data(force_update: bool = False, full_history: bool = False) -> pd.DataFrame:
     """Fetch live NAV data for Nomura Taiwan Small Cap Fund."""
-    return fetch_fund_nav_data("nomura_small_cap", force_update=force_update)
+    return fetch_fund_nav_data("nomura_small_cap", force_update=force_update, full_history=full_history)
 
-def fetch_nomura_fortune_nav_data(force_update: bool = False) -> pd.DataFrame:
+def fetch_nomura_fortune_nav_data(force_update: bool = False, full_history: bool = False) -> pd.DataFrame:
     """Fetch live NAV data for Nomura Taiwan Growth Selection (Hongyun) Fund."""
-    return fetch_fund_nav_data("nomura_fortune", force_update=force_update)
+    return fetch_fund_nav_data("nomura_fortune", force_update=force_update, full_history=full_history)
 
-def fetch_all_funds_nav_data(force_update: bool = False) -> None:
+def fetch_all_funds_nav_data(force_update: bool = False, full_history: bool = False) -> None:
     """Fetch and cache live NAV/stock price data for all supported funds and ETFs."""
     for fund_key in SUPPORTED_FUNDS:
-        fetch_fund_nav_data(fund_key, force_update=force_update)
+        fetch_fund_nav_data(fund_key, force_update=force_update, full_history=full_history)
 
 if __name__ == "__main__":
     for fund_key, info in SUPPORTED_FUNDS.items():

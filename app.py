@@ -220,6 +220,44 @@ st.markdown("""
         color: #38bdf8;
     }
 
+    /* Simulator Input & Container Styling */
+    div[data-testid="stVerticalBlockBorderWrapper"] {
+        background: #1e293b !important;
+        border: 1px solid #3b82f6 !important;
+        border-radius: 10px !important;
+        padding: 10px 14px !important;
+        box-shadow: 0 2px 10px rgba(59, 130, 246, 0.18) !important;
+        text-align: center !important;
+    }
+    div[data-testid="stNumberInput"] input {
+        text-align: center !important;
+        font-size: 1.35rem !important;
+        font-weight: 700 !important;
+        color: #38bdf8 !important;
+        background-color: #0f172a !important;
+        border: 1px solid #3b82f6 !important;
+        border-radius: 6px !important;
+    }
+    div[data-testid="stNumberInput"] button {
+        background-color: #1e293b !important;
+        border-color: #334155 !important;
+        color: #94a3b8 !important;
+    }
+    div[data-testid="stNumberInput"] button:hover {
+        color: #38bdf8 !important;
+        border-color: #38bdf8 !important;
+    }
+    .sim-badge {
+        display: inline-block;
+        background: rgba(59, 130, 246, 0.15);
+        border: 1px solid rgba(59, 130, 246, 0.4);
+        color: #60a5fa;
+        font-size: 0.75rem;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-weight: 600;
+    }
+
     /* Mobile Responsive Optimizations */
     @media (max-width: 768px) {
         html, body, .stApp, section.main {
@@ -388,6 +426,15 @@ selected_h_label = st.sidebar.selectbox(
 )
 selected_h_val = horizon_options[selected_h_label]
 
+# If user selected 5y or All, but data only spans ~3 years, display an informative tip
+if (selected_h_val == 0 or selected_h_val > 36) and not df_raw.empty:
+    total_span_days = (df_raw['Date'].max() - df_raw['Date'].min()).days
+    if total_span_days < 1200:
+        st.sidebar.info(
+            f"💡 目前為近 3 年快速資料（自 {df_raw['Date'].min().strftime('%Y/%m/%d')} 起）。\n\n"
+            f"若需完整成立至今歷史，請點選下方「📥 抓取成立至今完整數據」按鍵！"
+        )
+
 st.sidebar.markdown("---")
 
 # 2. 均線週期選取 (MA Period)
@@ -409,12 +456,21 @@ selected_ma_period = ma_period_options[selected_ma_label]
 
 st.sidebar.markdown("---")
 
-# Button to reload live data
-if st.sidebar.button(f"🔄 即時連線更新【{fund_info['short_name']}】數據", type="primary", use_container_width=True):
-    with st.spinner(f"正在連線抓取 {fund_info['name']} 最新{price_label}..."):
-        df_raw = fetch_fund_nav_data(selected_fund_key, force_update=True)
+# Buttons to reload live data
+st.sidebar.subheader("3. 數據更新與下載")
+
+if st.sidebar.button(f"🔄 即時更新【{fund_info['short_name']}】數據 (近3年)", type="primary", use_container_width=True, help="快速連線更新近 3 年最新價格數據"):
+    with st.spinner(f"正在快速連線抓取 {fund_info['name']} 最新{price_label}（近3年）..."):
+        df_raw = fetch_fund_nav_data(selected_fund_key, force_update=True, full_history=False)
         st.session_state["funds_data"][selected_fund_key] = df_raw
     st.toast(f"已為您更新 {fund_info['name']} 最新歷史{price_label}！", icon="✅")
+    st.rerun()
+
+if st.sidebar.button(f"📥 抓取【{fund_info['short_name']}】成立至今完整數據", use_container_width=True, help="連線抓取自成立以來的全期間歷史資料並快取於本地"):
+    with st.spinner(f"正在連線下載 {fund_info['name']} 成立至今全歷史{price_label}，資料較多請稍候..."):
+        df_raw = fetch_fund_nav_data(selected_fund_key, force_update=True, full_history=True)
+        st.session_state["funds_data"][selected_fund_key] = df_raw
+    st.toast(f"已成功為您下載並快取 {fund_info['name']} 成立至今全歷史數據！", icon="🎉")
     st.rerun()
 
 # Calculate Valuation River Bands
@@ -454,7 +510,7 @@ with col3:
     <div class="metric-card">
         <div class="metric-label">當前估值位階</div>
         <div class="metric-value" style="color: {s['status_color']}; font-size: 1.35rem;">{s['status_str']}</div>
-        <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">滾動標準差σ位階</div>
+        <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">2.0σ 區間: ${s['lower_2']:.1f} ~ ${s['upper_2']:.1f}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -485,11 +541,181 @@ with col5:
         <div class="metric-value metric-neutral" style="color: #a855f7; font-size: 1.25rem;">
             ${s['lower_2']:.1f} ~ ${s['upper_2']:.1f}
         </div>
-        <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">便宜價 ~ 昂貴價區間</div>
+        <div style="font-size: 0.85rem; color: {s['status_color']}; margin-top: 4px; font-weight: 700;">
+            {s['status_str']}
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
-st.markdown("<br>", unsafe_allow_html=True)
+# -------------------------------------------------------------
+# 🔮 隔日淨值與均線偏離率預估試算 (Next-Day Simulation)
+# -------------------------------------------------------------
+st.markdown("<div style='margin-top: 14px; margin-bottom: 8px;'></div>", unsafe_allow_html=True)
+
+# Title & Description for the simulation section
+st.markdown(f"""
+<div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; margin-bottom: 10px;">
+    <div style="font-size: 1.15rem; font-weight: 700; color: #38bdf8; display: flex; align-items: center; gap: 8px;">
+        <span>🔮</span> 隔日行情與均線偏離率試算模擬
+        <span class="sim-badge">即時滾動試算</span>
+    </div>
+    <div style="font-size: 0.8rem; color: #94a3b8;">
+        輸入隔天預估漲跌幅，系統自動滾動納入次日價位推算預估{price_label}、MA 均線與偏離率
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+# State initialization and preset buttons
+if "sim_pct_val" not in st.session_state:
+    st.session_state["sim_pct_val"] = 0.0
+
+def set_sim_pct(val: float):
+    st.session_state["sim_pct_val"] = float(val)
+
+c_pre_lbl, c_b1, c_b2, c_b3, c_b4, c_b5, c_b6, c_b7 = st.columns([1.6, 0.8, 0.8, 0.8, 1.1, 0.8, 0.8, 0.8])
+with c_pre_lbl:
+    st.markdown("<div style='font-size: 0.82rem; color: #94a3b8; padding-top: 6px; font-weight: 500;'>⚡ 快速預估範本：</div>", unsafe_allow_html=True)
+with c_b1:
+    st.button("-3%", on_click=set_sim_pct, args=(-3.0,), use_container_width=True, key="btn_sim_m3")
+with c_b2:
+    st.button("-2%", on_click=set_sim_pct, args=(-2.0,), use_container_width=True, key="btn_sim_m2")
+with c_b3:
+    st.button("-1%", on_click=set_sim_pct, args=(-1.0,), use_container_width=True, key="btn_sim_m1")
+with c_b4:
+    st.button("0% 平盤", on_click=set_sim_pct, args=(0.0,), use_container_width=True, key="btn_sim_0")
+with c_b5:
+    st.button("+1%", on_click=set_sim_pct, args=(1.0,), use_container_width=True, key="btn_sim_p1")
+with c_b6:
+    st.button("+2%", on_click=set_sim_pct, args=(2.0,), use_container_width=True, key="btn_sim_p2")
+with c_b7:
+    st.button("+3%", on_click=set_sim_pct, args=(3.0,), use_container_width=True, key="btn_sim_p3")
+
+sim_col1, sim_col2, sim_col3, sim_col4, sim_col5 = st.columns(5)
+
+with sim_col1:
+    with st.container(border=True):
+        st.markdown('<div class="metric-label" style="text-align: center; color: #60a5fa; font-weight: 600; margin-bottom: 2px;">⚡ 隔天預估漲跌幅 (%)</div>', unsafe_allow_html=True)
+        sim_pct = st.number_input(
+            "隔天預估漲跌幅 (%)",
+            min_value=-50.0,
+            max_value=50.0,
+            step=0.1,
+            format="%.2f",
+            key="sim_pct_val",
+            label_visibility="collapsed",
+            help="輸入隔天預估漲跌幅度（例如 +1.50 或 -0.80）"
+        )
+        st.markdown('<div style="font-size: 0.75rem; color: #94a3b8; text-align: center; margin-top: 2px;">可直接鍵入或微調</div>', unsafe_allow_html=True)
+
+# Next-day simulation calculation
+clean_nav_series = df_raw.dropna(subset=['NAV']).sort_values('Date')['NAV'].tolist()
+current_latest_nav = s['latest_nav']
+pred_nav = round(current_latest_nav * (1.0 + sim_pct / 100.0), 2)
+nav_change_val = pred_nav - current_latest_nav
+
+if selected_ma_period > 1:
+    sim_window_navs = clean_nav_series[-(selected_ma_period - 1):] + [pred_nav]
+else:
+    sim_window_navs = [pred_nav]
+
+pred_ma = float(np.mean(sim_window_navs))
+pred_bias_pct = ((pred_nav - pred_ma) / pred_ma * 100.0) if pred_ma > 0 else 0.0
+
+pred_std = float(np.std(sim_window_navs, ddof=1)) if len(sim_window_navs) > 1 else 0.0
+pred_upper2 = pred_ma + 2.0 * pred_std
+pred_upper1 = pred_ma + 1.0 * pred_std
+pred_lower1 = pred_ma - 1.0 * pred_std
+pred_lower2 = pred_ma - 2.0 * pred_std
+
+if pred_nav > pred_upper2:
+    pred_status_str = "🔴 昂貴區 (高於 2σ)"
+    pred_status_color = "#ef4444"
+elif pred_nav > pred_upper1:
+    pred_status_str = "🔴 昂貴區 (1σ ~ 2σ)"
+    pred_status_color = "#ef4444"
+elif pred_nav > pred_ma:
+    pred_status_str = "🟠 偏高區 (MA ~ 1σ)"
+    pred_status_color = "#f59e0b"
+elif pred_nav >= pred_lower1:
+    pred_status_str = "🟢 偏低區 (-1σ ~ MA)"
+    pred_status_color = "#22c55e"
+elif pred_nav >= pred_lower2:
+    pred_status_str = "🔵 便宜區 (-2σ ~ -1σ)"
+    pred_status_color = "#3b82f6"
+else:
+    pred_status_str = "🔵 便宜區 (低於 -2σ)"
+    pred_status_color = "#3b82f6"
+
+with sim_col2:
+    if nav_change_val > 0:
+        change_color = "#ef4444"
+        change_text = f"+${abs(nav_change_val):.2f} (+{abs(sim_pct):.2f}%)"
+    elif nav_change_val < 0:
+        change_color = "#22c55e"
+        change_text = f"-${abs(nav_change_val):.2f} (-{abs(sim_pct):.2f}%)"
+    else:
+        change_color = "#94a3b8"
+        change_text = "$0.00 (0.00%)"
+        
+    st.markdown(f"""
+    <div class="metric-card" style="border-color: #3b82f6; box-shadow: 0 2px 10px rgba(59, 130, 246, 0.15);">
+        <div class="metric-label">隔天預估{price_label} ({price_code})</div>
+        <div class="metric-value metric-neutral">${pred_nav:.2f}</div>
+        <div style="font-size: 0.75rem; color: {change_color}; margin-top: 4px; font-weight: 600;">
+            預估變動: {change_text}
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with sim_col3:
+    ma_diff = pred_ma - s['latest_ma']
+    if ma_diff > 0:
+        ma_diff_text = f"+${abs(ma_diff):.2f}"
+    elif ma_diff < 0:
+        ma_diff_text = f"-${abs(ma_diff):.2f}"
+    else:
+        ma_diff_text = "$0.00"
+        
+    st.markdown(f"""
+    <div class="metric-card" style="border-color: #3b82f6; box-shadow: 0 2px 10px rgba(59, 130, 246, 0.15);">
+        <div class="metric-label">隔天預估均線 (MA {selected_ma_period}日)</div>
+        <div class="metric-value metric-neutral" style="color: #cbd5e1;">${pred_ma:.2f}</div>
+        <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">滾動次日中線 ({ma_diff_text})</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with sim_col4:
+    if pred_nav > pred_ma:
+        pred_bias_class_color = "#ef4444"  # 紅字 (最新價格大於均線)
+        pred_bias_display = f"+{abs(pred_bias_pct):.2f}%"
+    elif pred_nav < pred_ma:
+        pred_bias_class_color = "#22c55e"  # 綠字 (最新價格小於均線)
+        pred_bias_display = f"-{abs(pred_bias_pct):.2f}%"
+    else:
+        pred_bias_class_color = "#94a3b8"  # 平盤中性
+        pred_bias_display = "0.00%"
+
+    bias_diff = pred_bias_pct - s['bias_pct']
+    bias_diff_str = f"{bias_diff:+.2f}%"
+
+    st.markdown(f"""
+    <div class="metric-card" style="border-color: #3b82f6; box-shadow: 0 2px 10px rgba(59, 130, 246, 0.15);">
+        <div class="metric-label">隔天預估均線偏離率 (Bias %)</div>
+        <div class="metric-value" style="color: {pred_bias_class_color};">{pred_bias_display}</div>
+        <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">相較預估 MA (變化 {bias_diff_str})</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with sim_col5:
+    st.markdown(f"""
+    <div class="metric-card" style="border-color: #3b82f6; box-shadow: 0 2px 10px rgba(59, 130, 246, 0.15);">
+        <div class="metric-label">隔天預估估值位階</div>
+        <div class="metric-value" style="color: {pred_status_color}; font-size: 1.35rem;">{pred_status_str}</div>
+        <div style="font-size: 0.75rem; color: #94a3b8; margin-top: 4px;">預估區間: ${pred_lower2:.1f} ~ ${pred_upper2:.1f}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("<div style='margin-bottom: 20px;'></div>", unsafe_allow_html=True)
 
 if "chart_reset_count" not in st.session_state:
     st.session_state["chart_reset_count"] = 0
@@ -519,8 +745,8 @@ fig.add_trace(go.Scatter(
     y=df_sub['Lower_2'],
     mode='lines',
     line=dict(width=0.8, color='rgba(59, 130, 246, 0.7)'),
-    name='🔵 便宜區',
-    hovertemplate="便宜區: $%{y:.2f}<extra></extra>"
+    name='🔵 便宜區基準 (-2.0σ)',
+    hovertemplate="便宜區基準 (-2σ): $%{y:.2f}<extra></extra>"
 ))
 
 # 2. Cheap Zone Fill to Lower 1 (Low zone boundary)
@@ -531,8 +757,8 @@ fig.add_trace(go.Scatter(
     line=dict(width=0.8, color='rgba(59, 130, 246, 0.5)'),
     fill='tonexty',
     fillcolor='rgba(59, 130, 246, 0.25)',
-    name='🟢 偏低區',
-    hovertemplate="偏低區: $%{y:.2f}<extra></extra>"
+    name='🔵 便宜區 (-2σ ~ -1σ)',
+    hovertemplate="便宜區邊界 (-1σ): $%{y:.2f}<extra></extra>"
 ))
 
 # 3. Low Zone to Center MA (Green Fill)
@@ -543,8 +769,8 @@ fig.add_trace(go.Scatter(
     line=dict(width=1.5, color='#ffffff', dash='dash'),
     fill='tonexty',
     fillcolor='rgba(34, 197, 94, 0.20)',
-    name=f'⚪ 均線 (MA {selected_ma_period}日)',
-    hovertemplate="均線: $%{y:.2f}<extra></extra>"
+    name=f'🟢 偏低區 (-1σ ~ MA)',
+    hovertemplate=f"滾動均線 (MA {selected_ma_period}日): $%{{y:.2f}}<extra></extra>"
 ))
 
 # 4. High Zone (Center MA to Upper 1) - Orange Fill
@@ -555,8 +781,8 @@ fig.add_trace(go.Scatter(
     line=dict(width=0.8, color='rgba(245, 158, 11, 0.5)'),
     fill='tonexty',
     fillcolor='rgba(245, 158, 11, 0.20)',
-    name='🟠 偏高區',
-    hovertemplate="偏高區: $%{y:.2f}<extra></extra>"
+    name='🟠 偏高區 (MA ~ 1σ)',
+    hovertemplate="偏高區邊界 (+1σ): $%{y:.2f}<extra></extra>"
 ))
 
 # 5. Expensive Zone (Upper 1 to Upper 2) - Red Fill
@@ -567,8 +793,8 @@ fig.add_trace(go.Scatter(
     line=dict(width=0.8, color='rgba(239, 68, 68, 0.5)'),
     fill='tonexty',
     fillcolor='rgba(239, 68, 68, 0.25)',
-    name='🔴 昂貴區',
-    hovertemplate="昂貴區: $%{y:.2f}<extra></extra>"
+    name='🔴 昂貴區 (1σ ~ 2σ)',
+    hovertemplate="昂貴區邊界 (+2σ): $%{y:.2f}<extra></extra>"
 ))
 
 # 6. Actual Price / NAV Line
